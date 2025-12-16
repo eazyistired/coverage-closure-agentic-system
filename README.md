@@ -105,3 +105,31 @@ graph TD
 
 ## 4. Conclusion
 By automating the semantic analysis of functional coverage gaps, this system reduces the turnaround time for verification closure. It moves the verification engineer's focus from "What is this gap?" to "How do I fix this gap?", significantly streamlining the chip production workflow.
+
+---
+
+## 5. Resources
+
+### From Concept to Practice: An Automated LLM-aided UVM Machine for RTL Verification
+**Junhao Ye, Yuchen Hu, Ke Xu, et al. (2025)**
+[paper](https://arxiv.org/pdf/2504.19959)
+
+### PRO-V-R1: Reasoning Enhanced Programming Agent for RTL Verification
+**Yujie Zhao, Zhijing Wu, Boqin Yuan, et al. (2025)**
+[paper](https://www.arxiv.org/pdf/2506.12200)
+
+### LLM-driven Verification Assistance: Bridging Code, Coverage and Collaboration
+**Aparna Mohan (2025)**
+[paper](https://journalijsra.com/sites/default/files/fulltext_pdf/IJSRA-2025-2287.pdf)
+
+### UVLLM: An Automated Universal RTL Verification Framework using LLMs
+**Yuchen Hu, Junhao Ye, Ke Xu, et al. (2024)**
+[paper](https://arxiv.org/pdf/2411.16238)
+
+### VerilogEval: Evaluating Large Language Models for Verilog Code Generation
+**Mingjie Liu, Nathaniel Pinckney, Brucek Khailany, Haoxing Ren (2023)**
+[paper](https://arxiv.org/abs/2309.07544)
+
+### riscvISACOV: SystemVerilog Functional Coverage for RISC-V ISA
+**RISC-V Verification**
+[source](https://github.com/riscv-verification/riscvISACOV)
