@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gap Report Viewer</title>
+<script>if(localStorage.getItem('ccs-theme')==='light')document.documentElement.classList.add('light')</script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Theme variables ──────────────────────────────────────────────────────── */
+:root {
+  --bg-body: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-deep: #0f172a;
+  --border: #334155;
+  --border-light: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #e2e8f0;
+  --text-muted: #475569;
+  --text-dim: #334155;
+  --text-label: #94a3b8;
+  --text-field-val: #cbd5e1;
+  --scrollbar: #334155;
+}
+:root.light {
+  --bg-body: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-deep: #f1f5f9;
+  --border: #e2e8f0;
+  --border-light: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+  --text-label: #475569;
+  --text-field-val: #334155;
+  --scrollbar: #cbd5e1;
+}
+
+body {
+  background: var(--bg-body);
+  color: var(--text-secondary);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 48px;
+  background: var(--bg-body);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.header-icon {
+  color: #22c55e;
+  display: flex;
+  align-items: center;
+}
+.header-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.wp-badge {
+  background: #14532d;
+  color: #86efac;
+  border: 1px solid #166534;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  display: none;
+}
+.wp-badge.visible { display: inline-block; }
+.header-stats {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.header-spacer { flex: 1; }
+.home-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  color: var(--text-label);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.home-btn:hover { background: var(--bg-surface); color: var(--text-secondary); border-color: var(--text-muted); }
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.theme-toggle:hover { background: var(--bg-deep); color: var(--text-primary); border-color: var(--text-muted); }
+.theme-toggle svg { width: 16px; height: 16px; }
+.theme-toggle .icon-moon { display: block; }
+.theme-toggle .icon-sun  { display: none; }
+:root.light .theme-toggle .icon-moon { display: none; }
+:root.light .theme-toggle .icon-sun  { display: block; }
+.load-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e40af;
+  color: #bfdbfe;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.load-btn:hover { background: #2563eb; }
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left tree panel ─────────────────────────────────────────────────────── */
+.tree-panel {
+  width: 300px;
+  min-width: 180px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.tree-filters {
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.search-box input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.search-box input::placeholder { color: var(--text-muted); }
+.search-box svg { color: var(--text-muted); flex-shrink: 0; }
+#cgFilter {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+  width: 100%;
+}
+#cgFilter option { background: var(--bg-surface); }
+.tree-summary {
+  padding: 6px 12px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Tree */
+.tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 12px;
+}
+.tree-scroll::-webkit-scrollbar { width: 5px; }
+.tree-scroll::-webkit-scrollbar-track { background: transparent; }
+.tree-scroll::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+.tree-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+  padding: 24px;
+}
+.tree-empty svg { opacity: 0.4; }
+
+/* CG group */
+.cg-group { margin: 2px 0; }
+.cg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  transition: background 0.1s;
+  color: var(--text-label);
+}
+.cg-header:hover { background: var(--bg-surface); color: var(--text-secondary); }
+.cg-header.active { background: var(--bg-surface); color: var(--text-secondary); }
+.cg-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  color: var(--text-muted);
+}
+.cg-chevron.open { transform: rotate(90deg); }
+.cg-name {
+  font-size: 12px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-count {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+.cg-children { display: none; padding-left: 18px; }
+.cg-children.open { display: block; }
+
+/* Leaf: parent node */
+.parent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  transition: background 0.1s;
+  color: var(--text-muted);
+}
+.parent-item:hover { background: var(--bg-surface); color: var(--text-field-val); }
+.parent-item.selected { background: #172554; color: #93c5fd; border-left: 2px solid #3b82f6; padding-left: 8px; }
+.parent-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.parent-dot.coverpoint { background: #06b6d4; }
+.parent-dot.cross       { background: #f43f5e; }
+.parent-name {
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.type-badge.coverpoint { background: #164e63; color: #67e8f9; }
+.type-badge.cross       { background: #4c0519; color: #fda4af; }
+
+/* ── Panel resizer ───────────────────────────────────────────────────────── */
+.panel-resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.panel-resizer:hover, .panel-resizer.dragging { background: #2563eb; }
+
+/* ── Right detail panel ──────────────────────────────────────────────────── */
+.detail-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.detail-empty svg { opacity: 0.3; width: 56px; height: 56px; }
+.detail-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+.detail-scroll::-webkit-scrollbar { width: 5px; }
+.detail-scroll::-webkit-scrollbar-track { background: transparent; }
+.detail-scroll::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+/* Detail content */
+.detail-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.detail-breadcrumb .crumb-sep { color: var(--text-dim); }
+.detail-breadcrumb .crumb-wp {
+  background: #14532d; color: #86efac;
+  border-radius: 4px; padding: 1px 7px;
+  font-weight: 600; font-size: 10px;
+}
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.detail-title h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.detail-section {
+  margin-bottom: 20px;
+}
+.detail-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.tag {
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.tag.bin   { background: var(--bg-surface); color: #f87171; border: 1px solid #991b1b; }
+.tag.sampled { background: var(--bg-surface); color: #fbbf24; border: 1px solid #92400e; }
+.divider { border: none; border-top: 1px solid var(--border-light); margin: 4px 0 20px; }
+.scenario-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-field-val);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.root-cause-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-label);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 12px 16px;
+  border-left: 3px solid #f59e0b;
+}
+
+/* highlight search matches */
+mark {
+  background: #854d0e;
+  color: #fef08a;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ── hidden by filter ───────────────────────────────────────────────────── */
+.filtered-out { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <a class="home-btn" href="../../home.html" title="Back to home">
+    <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10 2.5L1 9.5h2V18h5v-5h4v5h5V9.5h2L10 2.5z"/>
+    </svg>
+    Home
+  </a>
+  <div class="header-icon">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M9 11l3 3L22 4"/>
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+    </svg>
+  </div>
+  <span class="header-title">Gap Report Viewer</span>
+  <span class="wp-badge" id="wpBadge"></span>
+  <span class="header-stats" id="headerStats"></span>
+  <div class="header-spacer"></div>
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <label class="load-btn" title="Pick a *_gap_report.json from outputs/coverage-gap-reports/">
+    <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M3 4a1 1 0 0 1 1-1h4.586A1 1 0 0 1 9.293 3.293L10.707 4.707A1 1 0 0 0 11.414 5H16a1 1 0 0 1 1 1v1H3V4zm0 4h14v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8z"/>
+    </svg>
+    Open Gap Report…
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </label>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- Left tree -->
+  <div class="tree-panel" id="treePanel">
+    <div class="tree-filters">
+      <div class="search-box">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.242 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z"/>
+        </svg>
+        <input type="text" id="searchInput" placeholder="Search…">
+      </div>
+      <select id="cgFilter"><option value="">All covergroups</option></select>
+    </div>
+    <div class="tree-summary" id="treeSummary"></div>
+    <div class="tree-scroll" id="treeScroll">
+      <div class="tree-empty" id="treeEmpty">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="6" y="4" width="36" height="40" rx="3"/>
+          <line x1="14" y1="14" x2="34" y2="14"/>
+          <line x1="14" y1="21" x2="34" y2="21"/>
+          <line x1="14" y1="28" x2="26" y2="28"/>
+        </svg>
+        <span>Open a gap report JSON file to begin</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resizer -->
+  <div class="panel-resizer" id="panelResizer"></div>
+
+  <!-- Right detail -->
+  <div class="detail-panel">
+    <div id="detailEmpty" class="detail-empty">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="6" y="4" width="36" height="40" rx="3"/>
+        <line x1="14" y1="14" x2="34" y2="14"/>
+        <line x1="14" y1="21" x2="34" y2="21"/>
+        <line x1="14" y1="28" x2="26" y2="28"/>
+      </svg>
+      <span>Select an item in the tree to see details</span>
+    </div>
+    <div class="detail-scroll" id="detailScroll" style="display:none"></div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let report = null;        // parsed JSON
+let searchQ = '';
+let cgFilterVal = '';
+let selectedKey = null;   // "cgIdx:ggIdx"
+
+// ── File input ────────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try { initReport(JSON.parse(ev.target.result)); }
+    catch(err) { alert('Invalid JSON: ' + err.message); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+function initReport(data) {
+  report = data;
+  selectedKey = null;
+
+  const wp = data.wp || '?';
+  const cgs = data.covergroups || [];
+  const totalGaps = cgs.reduce((s, cg) => s + (cg.gap_groups || []).length, 0);
+
+  // Header
+  const badge = document.getElementById('wpBadge');
+  badge.textContent = wp;
+  badge.classList.add('visible');
+  document.getElementById('headerStats').textContent =
+    `${totalGaps} gap group${totalGaps !== 1 ? 's' : ''} across ${cgs.length} covergroup${cgs.length !== 1 ? 's' : ''}`;
+
+  // Populate CG filter dropdown
+  const cgSel = document.getElementById('cgFilter');
+  cgSel.innerHTML = '<option value="">All covergroups</option>';
+  cgs.forEach(cg => {
+    const o = document.createElement('option');
+    o.value = cg.covergroup_name;
+    o.textContent = cg.covergroup_name;
+    cgSel.appendChild(o);
+  });
+  cgFilterVal = '';
+  searchQ = '';
+  document.getElementById('searchInput').value = '';
+
+  buildTree();
+  showDetailEmpty();
+}
+
+// ── Build tree ────────────────────────────────────────────────────────────────
+function buildTree() {
+  const container = document.getElementById('treeScroll');
+  const empty = document.getElementById('treeEmpty');
+
+  if (!report) {
+    container.innerHTML = '';
+    container.appendChild(empty);
+    document.getElementById('treeSummary').textContent = '';
+    return;
+  }
+
+  container.innerHTML = '';
+  container.appendChild(empty);
+  empty.style.display = 'none';
+
+  const cgs = report.covergroups || [];
+  const q = searchQ.toLowerCase();
+
+  let visibleGroups = 0;
+  let visibleItems = 0;
+
+  cgs.forEach((cg, cgIdx) => {
+    // CG-level filter
+    if (cgFilterVal && cg.covergroup_name !== cgFilterVal) return;
+
+    const gapGroups = cg.gap_groups || [];
+
+    // Filter gap groups by search
+    const matchingGGs = gapGroups.filter(gg => !q || matchesSearch(gg, cg, q));
+
+    if (!matchingGGs.length && q) return; // hide CG if no children match
+
+    visibleGroups++;
+    visibleItems += matchingGGs.length;
+
+    // CG group wrapper
+    const cgGroup = document.createElement('div');
+    cgGroup.className = 'cg-group';
+
+    // CG header row
+    const cgHeader = document.createElement('div');
+    cgHeader.className = 'cg-header';
+    const isExpanded = true;
+
+    cgHeader.innerHTML = `
+      <span class="cg-chevron ${isExpanded ? 'open' : ''}">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+          <path d="M3 2l4 3-4 3"/>
+        </svg>
+      </span>
+      <span class="cg-name" title="${esc(cg.covergroup_name)}">${highlight(cg.covergroup_name, q)}</span>
+      <span class="cg-count">${matchingGGs.length}</span>`;
+
+    const cgChildren = document.createElement('div');
+    cgChildren.className = 'cg-children' + (isExpanded ? ' open' : '');
+
+    cgHeader.addEventListener('click', () => {
+      const ch = cgHeader.querySelector('.cg-chevron');
+      const open = cgChildren.classList.toggle('open');
+      ch.classList.toggle('open', open);
+    });
+
+    // Leaf items
+    matchingGGs.forEach((gg, ggIdx) => {
+      const globalKey = `${cgIdx}:${ggIdx}`;
+      const item = document.createElement('div');
+      item.className = 'parent-item' + (selectedKey === globalKey ? ' selected' : '');
+      item.dataset.key = globalKey;
+      item.innerHTML = `
+        <span class="parent-dot ${gg.parent_type}"></span>
+        <span class="parent-name" title="${esc(gg.parent_name)}">${highlight(gg.parent_name, q)}</span>
+        <span class="type-badge ${gg.parent_type}">${gg.parent_type === 'cross' ? 'cross' : 'cp'}</span>`;
+
+      item.addEventListener('click', () => {
+        selectItem(cgIdx, ggIdx, cg, gg);
+      });
+      cgChildren.appendChild(item);
+    });
+
+    cgGroup.appendChild(cgHeader);
+    cgGroup.appendChild(cgChildren);
+    container.appendChild(cgGroup);
+  });
+
+  document.getElementById('treeSummary').textContent =
+    q || cgFilterVal
+      ? `${visibleItems} match${visibleItems !== 1 ? 'es' : ''} in ${visibleGroups} covergroup${visibleGroups !== 1 ? 's' : ''}`
+      : '';
+}
+
+// ── Search helpers ────────────────────────────────────────────────────────────
+function matchesSearch(gg, cg, q) {
+  return [
+    cg.covergroup_name,
+    gg.parent_name,
+    gg.scenario_description || '',
+    gg.likely_root_cause || '',
+    (gg.uncovered_bins || []).join(' '),
+    (gg.sampled_on || []).join(' '),
+  ].some(s => s.toLowerCase().includes(q));
+}
+
+function highlight(text, q) {
+  if (!q) return esc(text);
+  const re = new RegExp(`(${escRe(q)})`, 'gi');
+  return esc(text).replace(re, '<mark>$1</mark>');
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// ── Select item ───────────────────────────────────────────────────────────────
+function selectItem(cgIdx, ggIdx, cg, gg) {
+  selectedKey = `${cgIdx}:${ggIdx}`;
+
+  // Update selected state in tree
+  document.querySelectorAll('.parent-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.key === selectedKey);
+  });
+
+  renderDetail(cg, gg);
+}
+
+// ── Render detail ─────────────────────────────────────────────────────────────
+function renderDetail(cg, gg) {
+  document.getElementById('detailEmpty').style.display = 'none';
+  const scroll = document.getElementById('detailScroll');
+  scroll.style.display = '';
+
+  const q = searchQ.toLowerCase();
+  const bins = (gg.uncovered_bins || []);
+  const sampledOn = (gg.sampled_on || []);
+
+  scroll.innerHTML = `
+    <div class="detail-breadcrumb">
+      <span class="crumb-wp">${esc(report.wp || '')}</span>
+      <span class="crumb-sep">›</span>
+      <span title="${esc(cg.covergroup_name)}">${highlight(cg.covergroup_name, q)}</span>
+      <span class="crumb-sep">›</span>
+      <span>${highlight(gg.parent_name, q)}</span>
+    </div>
+
+    <div class="detail-title">
+      <h2>${highlight(gg.parent_name, q)}</h2>
+      <span class="type-badge ${gg.parent_type}" style="font-size:11px;padding:3px 8px">${gg.parent_type}</span>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-label">Uncovered bins</div>
+      <div class="tag-list">
+        ${bins.map(b => `<span class="tag bin">${highlight(b, q)}</span>`).join('') || '<span style="color:#475569;font-size:12px">—</span>'}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-label">Sampled on</div>
+      <div class="tag-list">
+        ${sampledOn.map(s => `<span class="tag sampled">${highlight(s, q)}</span>`).join('') || '<span style="color:#475569;font-size:12px">—</span>'}
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="detail-section">
+      <div class="detail-section-label">Scenario description</div>
+      <div class="scenario-text">${highlight(gg.scenario_description || '—', q)}</div>
+    </div>
+
+    ${gg.likely_root_cause ? `
+    <div class="detail-section">
+      <div class="detail-section-label">Likely root cause</div>
+      <div class="root-cause-text">${highlight(gg.likely_root_cause, q)}</div>
+    </div>` : ''}
+  `;
+}
+
+function showDetailEmpty() {
+  document.getElementById('detailEmpty').style.display = '';
+  document.getElementById('detailScroll').style.display = 'none';
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+document.getElementById('searchInput').addEventListener('input', e => {
+  searchQ = e.target.value.trim();
+  selectedKey = null;
+  showDetailEmpty();
+  buildTree();
+});
+
+document.getElementById('cgFilter').addEventListener('change', e => {
+  cgFilterVal = e.target.value;
+  selectedKey = null;
+  showDetailEmpty();
+  buildTree();
+});
+
+// ── Panel resizer ─────────────────────────────────────────────────────────────
+(function () {
+  const resizer = document.getElementById('panelResizer');
+  const panel   = document.getElementById('treePanel');
+  let dragging = false, startX = 0, startW = 0;
+
+  resizer.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.min(520, Math.max(180, startW + e.clientX - startX));
+    panel.style.width = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+(function() {
+  const KEY = 'ccs-theme';
+  const saved = localStorage.getItem(KEY);
+  if (saved === 'light') document.documentElement.classList.add('light');
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem(KEY, isLight ? 'light' : 'dark');
+  });
+})();
+</script>
+</body>
+</html>

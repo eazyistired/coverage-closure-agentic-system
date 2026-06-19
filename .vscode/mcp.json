@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"coverage-gap-analyzer": {
+			"type": "http",
+			"url": "http://localhost:8080/mcp"
+		}
+	},
+	"inputs": []
+}

@@ -1,0 +1,86 @@
+# eval_config.yaml
+# -----------------
+# Central configuration for the LLM-as-Judge evaluation module.
+# All model identifiers and parameters are resolved at runtime from this file.
+# API keys and base URLs are loaded from .env — never put them here.
+
+judge:
+  # Models used as judges. Each judge run produces a separate eval_result.json.
+  # Use the same identifier string that the API expects in the "model" field.
+  models:
+    primary:
+      id: gpt-5.2
+      provider: openai
+      temperature: 0.0               # deterministic — required for Scenario 3 consistency test
+    secondary:
+      id: llama3.3-70b
+      provider: openai
+      temperature: 0.0
+  #     id: claudesonnet4.5
+  #     provider: openai
+  #     temperature: 0.0
+  # # Which judge to use as the default when only one is needed (e.g. Scenarios 2, 4, 5, 6)
+  default: primary
+  # Minimum seconds to wait between consecutive judge API calls.
+  # Set to 2.0 to stay safely under a 30 RPM rate limit (30/60 = 0.5 RPM per req,
+  # but each call can take 1-2 s, so 2 s effectively caps at ~30 RPM with headroom).
+  rate_limit_delay_s: 2.0
+
+experiment:
+  # Models used as the *analyzer* pipeline LLMs being evaluated (the subjects, not the judges).
+  # Scenario 1 iterates over all entries in this list.
+  # temperature is omitted for gpt-5* models — the API does not accept it.
+  models:
+    # - label: claudesonnet4
+    #   id: claudesonnet4
+    #   provider: openai
+    #   temperature: 0.1
+    # - label: claudesonnet4.5
+    #   id: claudesonnet4.5
+    #   provider: openai
+    #   temperature: 0.1
+    - label: llama3.3-70b
+      id: llama3.3-70b
+      provider: openai
+      temperature: 0.1
+    - label: gpt-5
+      id: gpt-5
+      provider: openai
+    - label: gpt-5-mini
+      id: gpt-5-mini
+      provider: openai
+    - label: gpt-5-nano
+      id: gpt-5-nano
+      provider: openai
+    - label: gpt-5.2
+      id: gpt-5.2
+      provider: openai
+      temperature: 0.1
+    - label: gpt-5.3-chat
+      id: gpt-5.3-chat
+      provider: openai
+    # - label: gpt-4.1
+    #   id: gpt-4.1
+    #   provider: openai
+    #   temperature: 0.1
+    # - label: gpt-4.1-nano
+    #   id: gpt-4.1-nano
+    #   provider: openai
+    #   temperature: 0.1
+
+ablation:
+  # Parameters swept for ablation scenarios (Scenario 2 and 6).
+  kg_context:
+    enabled_values: [true, false]   # Scenario 2: KG on/off
+  rag_chunk_sizes: [256, 512, 1024] # Scenario 6: token chunk sizes
+
+self_consistency:
+  # Number of judge repetitions for Scenario 3.
+  repetitions: 3
+  # Acceptable standard deviation threshold per dimension (scores 1–5).
+  std_threshold: 0.5
+
+output:
+  directory: outputs/evaluation
+  # File naming: <WP>_<label>_<YYYY-MM-DD_HH-MM-SS>_<artifact_type>.json
+  timestamped: true

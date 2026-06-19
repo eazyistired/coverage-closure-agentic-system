@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph Viewer</title>
+<script>if(localStorage.getItem('ccs-theme')==='light')document.documentElement.classList.add('light')</script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+/* ── Theme variables ──────────────────────────────────────────────────────── */
+:root {
+  --bg-body: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-deep: #0f172a;
+  --border: #334155;
+  --border-light: #283447;
+  --text-primary: #f1f5f9;
+  --text-secondary: #e2e8f0;
+  --text-muted: #475569;
+  --text-dim: #334155;
+  --text-label: #94a3b8;
+  --text-field-val: #cbd5e1;
+  --scrollbar: #334155;
+}
+:root.light {
+  --bg-body: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-deep: #f1f5f9;
+  --border: #e2e8f0;
+  --border-light: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+  --text-label: #475569;
+  --text-field-val: #334155;
+  --scrollbar: #cbd5e1;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  background: var(--bg-body);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.header {
+  height: 50px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.header-icon { color: #3b82f6; display: flex; align-items: center; }
+.header-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.wp-badge {
+  background: #1d4ed822;
+  color: #93c5fd;
+  border: 1px solid #2563eb55;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  display: none;
+}
+.header-stats { color: var(--text-muted); font-size: 12px; }
+.header-spacer { flex: 1; }
+.load-btn {
+  background: #1e40af;
+  color: #bfdbfe;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.load-btn:hover { background: #2563eb; }
+
+/* ── Main layout ──────────────────────────────────────────────────────────── */
+.main { flex: 1; display: flex; overflow: hidden; }
+
+/* ── Graph area ───────────────────────────────────────────────────────────── */
+.graph-area { flex: 1; position: relative; overflow: hidden; }
+#graphSvg { width: 100%; height: 100%; background: var(--bg-body); cursor: grab; }
+#graphSvg:active { cursor: grabbing; }
+
+/* ── Node styles ──────────────────────────────────────────────────────────── */
+.node { cursor: pointer; }
+.node circle {
+  stroke-width: 2px;
+  transition: filter 0.15s, r 0.15s;
+}
+.node:hover circle { filter: brightness(1.35); }
+.node.selected circle {
+  stroke: #fff !important;
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 7px rgba(255,255,255,0.4));
+}
+.node.dimmed { opacity: 0.1; pointer-events: none; }
+.node.highlighted circle { filter: drop-shadow(0 0 8px #fbbf24) brightness(1.2); }
+
+.node-label {
+  fill: var(--text-label);
+  font-size: 11px;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--bg-body);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.node-label.cg-label {
+  fill: #93c5fd;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ── Edge styles ──────────────────────────────────────────────────────────── */
+.edge { stroke-opacity: 0.4; stroke-width: 1.2px; fill: none; }
+.edge:hover { stroke-opacity: 0.9 !important; stroke-width: 2px; cursor: default; }
+.edge.dimmed { stroke-opacity: 0.04 !important; }
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────── */
+.tooltip {
+  position: absolute;
+  background: var(--bg-surface);
+  border: 1px solid var(--text-muted);
+  border-radius: 7px;
+  padding: 7px 11px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 100;
+  max-width: 300px;
+  line-height: 1.6;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+.tooltip.visible { opacity: 1; }
+
+/* ── Detail panel ─────────────────────────────────────────────────────────── */
+.detail-panel {
+  width: 370px;
+  min-width: 250px;
+  max-width: 700px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.panel-resizer {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-resizer:hover, .panel-resizer.dragging { background: #2563eb66; }
+.detail-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.detail-empty svg { width: 48px; height: 48px; opacity: 0.3; }
+
+.detail-header {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.detail-type-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 7px;
+}
+.detail-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+.detail-summary {
+  margin-top: 6px;
+  color: var(--text-label);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.detail-body::-webkit-scrollbar { width: 5px; }
+.detail-body::-webkit-scrollbar-track { background: transparent; }
+.detail-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+.detail-section {}
+.detail-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+.detail-field {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.detail-field-key {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 90px;
+}
+.detail-field-val { color: var(--text-field-val); word-break: break-word; }
+
+.tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.tag:hover { filter: brightness(1.3); }
+.tag.blue  { background: #1e3a5f; color: #93c5fd; }
+.tag.green { background: #14532d; color: #86efac; }
+.tag.amber { background: #451a03; color: #fcd34d; }
+.tag.purple{ background: #3b0764; color: #d8b4fe; }
+.tag.rose  { background: #4c0519; color: #fda4af; }
+.tag.cyan  { background: #164e63; color: #67e8f9; }
+.tag.muted { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); cursor: default; }
+
+/* ── Collapsible ──────────────────────────────────────────────────────────── */
+.coll-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  padding: 8px 0 6px;
+  border-top: 1px solid var(--border-light);
+}
+.coll-header:hover .coll-title { color: var(--text-label); }
+.coll-arrow {
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  line-height: 1;
+}
+.coll-arrow.open { transform: rotate(90deg); }
+.coll-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.coll-body { display: none; padding-bottom: 4px; }
+.coll-body.open { display: block; }
+
+pre.sv-src {
+  background: var(--bg-deep);
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-label);
+  overflow: auto;
+  white-space: pre;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  max-height: 280px;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+pre.sv-src::-webkit-scrollbar { width: 5px; height: 5px; }
+pre.sv-src::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+.expand-btn {
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 5px;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid;
+}
+
+/* ── Bottom controls ──────────────────────────────────────────────────────── */
+.controls {
+  height: 44px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 14px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.controls::-webkit-scrollbar { height: 0; }
+
+.legend { display: flex; align-items: center; gap: 6px; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: opacity 0.2s, border-color 0.2s;
+}
+.legend-item:hover { border-color: var(--text-muted); }
+.legend-item.hidden { opacity: 0.3; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+.ctrl-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  gap: 6px;
+}
+.search-box svg { color: var(--text-muted); flex-shrink: 0; }
+#searchInput {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  width: 140px;
+  padding: 4px 0;
+}
+#searchInput::placeholder { color: var(--text-muted); }
+
+.focus-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+#focusSelect {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+  max-width: 170px;
+}
+.home-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  color: var(--text-label);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.home-btn:hover { background: var(--bg-surface); color: var(--text-secondary); border-color: var(--text-muted); }
+
+/* ── CG-filter toggle button ────────────────────────────────────────────── */
+.ctrl-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.ctrl-toggle:hover { border-color: var(--text-muted); color: var(--text-label); }
+.ctrl-toggle.active {
+  background: #1e3a5f;
+  border-color: #2563eb;
+  color: #93c5fd;
+}
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────── */
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.theme-toggle:hover { background: var(--bg-deep); color: var(--text-primary); border-color: var(--text-muted); }
+.theme-toggle svg { width: 16px; height: 16px; }
+.theme-toggle .icon-moon { display: block; }
+.theme-toggle .icon-sun  { display: none; }
+:root.light .theme-toggle .icon-moon { display: none; }
+:root.light .theme-toggle .icon-sun  { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <a class="home-btn" href="../../home.html" title="Back to home">
+    <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10 2.5L1 9.5h2V18h5v-5h4v5h5V9.5h2L10 2.5z"/>
+    </svg>
+    Home
+  </a>
+  <div class="header-icon">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="10" cy="3.5" r="2.2"/><circle cx="2.5" cy="16" r="2.2"/><circle cx="17.5" cy="16" r="2.2"/>
+      <line x1="10" y1="5.7" x2="4.2" y2="14"/><line x1="10" y1="5.7" x2="15.8" y2="14"/>
+      <line x1="4.7" y1="16" x2="15.3" y2="16"/>
+    </svg>
+  </div>
+  <span class="header-title">Knowledge Graph Viewer</span>
+  <span class="wp-badge" id="wpBadge"></span>
+  <span class="header-stats" id="headerStats"></span>
+  <div class="header-spacer"></div>
+  <!-- Theme toggle -->
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
+  <!-- KG file picker -->
+  <label class="load-btn" id="filePicker" title="Pick a *_knowledge_graph.json from outputs/knowledge-graphs/">
+    Open KG File…
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </label>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="graph-area">
+    <svg id="graphSvg"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="detail-panel" id="detailPanel">
+    <div class="panel-resizer" id="panelResizer"></div>
+    <div class="detail-empty">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="24" cy="10" r="5"/><circle cx="8" cy="38" r="5"/><circle cx="40" cy="38" r="5"/>
+        <line x1="24" y1="15" x2="11" y2="34"/><line x1="24" y1="15" x2="37" y2="34"/>
+        <line x1="13" y1="38" x2="35" y2="38"/>
+      </svg>
+      <span>Load a knowledge graph JSON file to begin</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Controls ────────────────────────────────────────────────────────────── -->
+<div class="controls">
+  <div class="legend" id="legend"></div>
+  <div class="ctrl-sep"></div>
+  <div class="search-box">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.242 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z"/>
+    </svg>
+    <input type="text" id="searchInput" placeholder="Search nodes…">
+  </div>
+  <div class="ctrl-sep"></div>
+  <div class="focus-wrap">
+    <span>Focus CG:</span>
+    <select id="focusSelect"><option value="">All nodes</option></select>
+  </div>
+  <div class="ctrl-sep"></div>
+  <button class="ctrl-toggle" id="cgFilterBtn" onclick="toggleCGFilter()" title="Show only nodes reachable from any covergroup">
+    CG-connected only
+  </button>
+</div>
+
+<script>
+'use strict';
+
+// ── Node / edge visual config ─────────────────────────────────────────────────
+const N = {
+  cg:         { color: '#3b82f6', stroke: '#1d4ed8', r: 18, label: 'Covergroup' },
+  task:       { color: '#22c55e', stroke: '#15803d', r: 11, label: 'Task'       },
+  var:        { color: '#f59e0b', stroke: '#b45309', r:  6, label: 'Variable'   },
+  event:      { color: '#a855f7', stroke: '#7e22ce', r:  9, label: 'Event'      },
+  coverpoint: { color: '#06b6d4', stroke: '#0e7490', r:  8, label: 'Coverpoint' },
+  cross:      { color: '#f43f5e', stroke: '#be123c', r:  8, label: 'Cross'      },
+};
+const ECOL = {
+  samples:          '#3b82f6',
+  sampled_on:       '#06b6d4',
+  updates:          '#22c55e',
+  mirrors_register: '#f59e0b',
+  has_coverpoint:   '#06b6d4',
+  has_cross:        '#f43f5e',
+  cross_to_cp:      '#f43f5e',  // cross → coverpoint
+  cp_samples:       '#60a5fa',  // coverpoint → variable
+};
+const EDASH = { has_coverpoint: '4,3', has_cross: '4,3' };
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let rawKG = null, baseNodes = [], baseEdges = [];
+let expandedCGs  = new Set();
+let hiddenTypes  = new Set();
+let selectedId   = null;
+let searchQ      = '';
+let focusCGId    = '';
+let svgSel, gMain, sim, linkSel, nodeSel;
+let xfm = d3.zoomIdentity;
+let filterCGOnly = false;
+
+// -- File input -------------------------------------------------------
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try { initKG(JSON.parse(ev.target.result)); }
+    catch(err) { alert('Invalid JSON: ' + err.message); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+function initKG(data) {
+  rawKG = data;
+  expandedCGs.clear(); hiddenTypes.clear();
+  selectedId = null; searchQ = ''; focusCGId = '';
+
+  baseNodes = [];
+  const nd = data.nodes || {};
+  (nd.variables  || []).forEach(v => baseNodes.push({ id: v.id, name: v.name, nodeType: 'var',   data: v }));
+  (nd.events     || []).forEach(v => baseNodes.push({ id: v.id, name: v.name, nodeType: 'event', data: v }));
+  (nd.tasks      || []).forEach(v => baseNodes.push({ id: v.id, name: v.name, nodeType: 'task',  data: v }));
+  (nd.covergroups|| []).forEach(v => baseNodes.push({ id: v.id, name: v.name, nodeType: 'cg',    data: v }));
+
+  // JSON edges use 'from'/'to'; normalise to source/target for D3
+  baseEdges = (data.edges || []).map(e => ({ source: e.from, target: e.to, rel: e.rel }));
+
+  document.getElementById('wpBadge').textContent = 'WP: ' + (data.wp || '?');
+  document.getElementById('wpBadge').style.display = 'inline';
+  document.getElementById('headerStats').textContent =
+    `${baseNodes.length} nodes · ${baseEdges.length} edges`;
+
+  // Populate focus dropdown
+  const sel = document.getElementById('focusSelect');
+  sel.innerHTML = '<option value="">All nodes</option>';
+  baseNodes.filter(n => n.nodeType === 'cg').forEach(n => {
+    const o = document.createElement('option');
+    o.value = n.id; o.textContent = n.name;
+    sel.appendChild(o);
+  });
+  sel.value = '';
+
+  document.getElementById('searchInput').value = '';
+  buildLegend();
+  resetDetailPanel();
+  xfm = d3.zoomIdentity;
+  drawGraph();
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+function buildLegend() {
+  hiddenTypes.add('task'); // hidden by default
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  ['cg','task','var','event'].forEach(t => {
+    const cfg = N[t];
+    const cnt = baseNodes.filter(n => n.nodeType === t).length;
+    const el = document.createElement('div');
+    el.className = 'legend-item' + (hiddenTypes.has(t) ? ' hidden' : '');
+    el.dataset.type = t;
+    el.innerHTML = `<div class="legend-dot" style="background:${cfg.color}"></div>
+      <span>${cfg.label} <span style="color:#475569">(${cnt})</span></span>`;
+    el.addEventListener('click', () => {
+      hiddenTypes.has(t) ? hiddenTypes.delete(t) : hiddenTypes.add(t);
+      el.classList.toggle('hidden', hiddenTypes.has(t));
+      rebuildGraph();
+    });
+    leg.appendChild(el);
+  });
+}
+
+// ── Compute visible graph ─────────────────────────────────────────────────────
+function computeGraph() {
+  let nodes = baseNodes.map(n => ({ ...n }));
+  let edges = baseEdges.map(e => ({ ...e }));
+
+  // Expanded CG children — hierarchy: CG → Cross → Coverpoint → Variable
+  const childIds = new Set();
+  expandedCGs.forEach(cgId => {
+    const cg = baseNodes.find(n => n.id === cgId);
+    if (!cg) return;
+
+    // Build coverpoint child nodes and a name→id map
+    const cpNameToId = {};
+    (cg.data.coverpoints || []).forEach(cp => {
+      const id = `cp:${cgId}:${cp.name}`;
+      childIds.add(id);
+      cpNameToId[cp.name] = id;
+      nodes.push({ id, name: cp.name, nodeType: 'coverpoint', data: cp, parentId: cgId });
+      // Coverpoint → Variable
+      (cp.sampled_variables || []).forEach(varName => {
+        const vNode = baseNodes.find(n => n.nodeType === 'var' && n.name === varName);
+        if (vNode) edges.push({ source: id, target: vNode.id, rel: 'cp_samples' });
+      });
+    });
+
+    // Which coverpoints are claimed by at least one cross
+    const cpInCross = new Set();
+    (cg.data.crosses || []).forEach(cr => {
+      (cr.coverpoints || []).forEach(cpName => cpInCross.add(cpName));
+    });
+
+    // CG → Cross, then Cross → Coverpoint
+    (cg.data.crosses || []).forEach(cr => {
+      const crId = `cr:${cgId}:${cr.name}`;
+      childIds.add(crId);
+      nodes.push({ id: crId, name: cr.name, nodeType: 'cross', data: cr, parentId: cgId });
+      edges.push({ source: cgId, target: crId, rel: 'has_cross' });
+      (cr.coverpoints || []).forEach(cpName => {
+        const cpId = cpNameToId[cpName];
+        if (cpId) edges.push({ source: crId, target: cpId, rel: 'cross_to_cp' });
+      });
+    });
+
+    // CG → Coverpoint only for coverpoints not owned by any cross
+    (cg.data.coverpoints || []).forEach(cp => {
+      if (!cpInCross.has(cp.name))
+        edges.push({ source: cgId, target: cpNameToId[cp.name], rel: 'has_coverpoint' });
+    });
+  });
+
+  // Suppress direct CG→Variable base edges for expanded CGs
+  edges = edges.filter(e => {
+    if (!expandedCGs.has(edgeNodeId(e.source))) return true;
+    return e.rel !== 'samples' && e.rel !== 'sampled_on';
+  });
+
+  // Focus filter (1-hop neighbourhood)
+  if (focusCGId) {
+    const keep = new Set([focusCGId]);
+    edges.forEach(e => {
+      const s = edgeNodeId(e.source), t = edgeNodeId(e.target);
+      if (s === focusCGId) keep.add(t);
+      if (t === focusCGId) keep.add(s);
+    });
+    nodes = nodes.filter(n => keep.has(n.id));
+    edges = edges.filter(e => keep.has(edgeNodeId(e.source)) && keep.has(edgeNodeId(e.target)));
+  }
+
+  // Hidden types (always keep expanded children)
+  nodes = nodes.filter(n => !hiddenTypes.has(n.nodeType) || childIds.has(n.id));
+
+  // CG-connected filter: keep only nodes reachable from any CG via currently visible edges
+  // (BFS is restricted to visible-node edges so that variables only reachable through
+  //  hidden node types, e.g. tasks, are correctly excluded)
+  if (filterCGOnly) {
+    const visAfterTypeFilter = new Set(nodes.map(n => n.id));
+    const visEdges = edges.filter(e =>
+      visAfterTypeFilter.has(edgeNodeId(e.source)) && visAfterTypeFilter.has(edgeNodeId(e.target))
+    );
+    const cgIds = new Set(nodes.filter(n => n.nodeType === 'cg').map(n => n.id));
+    const reachable = new Set(cgIds);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      visEdges.forEach(e => {
+        const s = edgeNodeId(e.source), t = edgeNodeId(e.target);
+        if (reachable.has(s) && !reachable.has(t)) { reachable.add(t); changed = true; }
+        if (reachable.has(t) && !reachable.has(s)) { reachable.add(s); changed = true; }
+      });
+    }
+    nodes = nodes.filter(n => reachable.has(n.id) || childIds.has(n.id));
+  }
+
+  const vis = new Set(nodes.map(n => n.id));
+  edges = edges.filter(e => vis.has(edgeNodeId(e.source)) && vis.has(edgeNodeId(e.target)));
+
+  return { nodes, edges };
+}
+function edgeNodeId(x) { return typeof x === 'object' ? x.id : x; }
+
+// ── Draw graph (full reset) ───────────────────────────────────────────────────
+function drawGraph() {
+  const container = document.getElementById('graphSvg');
+  d3.select(container).selectAll('*').remove();
+
+  svgSel = d3.select(container);
+
+  // Arrow markers
+  const defs = svgSel.append('defs');
+  Object.entries(ECOL).forEach(([rel, col]) => {
+    defs.append('marker')
+      .attr('id', `arr-${rel}`)
+      .attr('viewBox', '0 -4 8 8')
+      .attr('refX', 12).attr('refY', 0)
+      .attr('markerWidth', 5).attr('markerHeight', 5)
+      .attr('orient', 'auto')
+      .append('path').attr('d', 'M0,-4L8,0L0,4')
+      .attr('fill', col).attr('opacity', 0.7);
+  });
+
+  gMain = svgSel.append('g');
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.08, 5])
+    .on('zoom', ev => { xfm = ev.transform; gMain.attr('transform', ev.transform); });
+  svgSel.call(zoom).call(zoom.transform, xfm);
+
+  rebuildGraph();
+}
+
+// ── Rebuild simulation + selections (keeps SVG, reuses gMain) ─────────────────
+function rebuildGraph() {
+  if (!rawKG) return;
+  const { nodes, edges } = computeGraph();
+
+  const W = document.getElementById('graphSvg').clientWidth  || 900;
+  const H = document.getElementById('graphSvg').clientHeight || 600;
+
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const links = edges
+    .map(e => ({
+      ...e,
+      source: nodeById.get(edgeNodeId(e.source)),
+      target: nodeById.get(edgeNodeId(e.target)),
+    }))
+    .filter(e => e.source && e.target);
+
+  if (sim) sim.stop();
+
+  // ── Edge layer
+  gMain.selectAll('.edge-layer').remove();
+  const edgeLayer = gMain.append('g').attr('class', 'edge-layer');
+  linkSel = edgeLayer.selectAll('line')
+    .data(links)
+    .join('line')
+    .attr('class', 'edge')
+    .attr('stroke', d => ECOL[d.rel] || '#64748b')
+    .attr('stroke-dasharray', d => EDASH[d.rel] || null)
+    .attr('marker-end', d => `url(#arr-${d.rel})`);
+
+  linkSel
+    .on('mousemove', (ev, d) => showTip(ev,
+      `<b>${d.source.name}</b>&nbsp;<span style="color:#475569">─${d.rel}→</span>&nbsp;<b>${d.target.name}</b>`))
+    .on('mouseleave', hideTip);
+
+  // ── Node layer
+  gMain.selectAll('.node-layer').remove();
+  const nodeLayer = gMain.append('g').attr('class', 'node-layer');
+  nodeSel = nodeLayer.selectAll('.node')
+    .data(nodes, d => d.id)
+    .join('g')
+    .attr('class', d => `node ${d.nodeType}`)
+    .call(d3.drag()
+      .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  nodeSel.append('circle')
+    .attr('r',      d => N[d.nodeType]?.r || 8)
+    .attr('fill',   d => N[d.nodeType]?.color || '#64748b')
+    .attr('stroke', d => N[d.nodeType]?.stroke || '#334155');
+
+  nodeSel.append('text')
+    .attr('class', d => d.nodeType === 'cg' ? 'node-label cg-label' : 'node-label')
+    .attr('dy', d => -((N[d.nodeType]?.r || 8) + 5))
+    .attr('text-anchor', 'middle')
+    .text(d => d.name);
+
+  nodeSel
+    .on('mousemove', (ev, d) => {
+      const c = N[d.nodeType] || {};
+      showTip(ev,
+        `<b>${d.name}</b><br>` +
+        `<span style="color:${c.color || '#94a3b8'}">${c.label || d.nodeType}</span>` +
+        (d.data.semantic_summary ? `<br><span style="color:#64748b;font-size:11px">${trunc(d.data.semantic_summary, 110)}</span>` : ''));
+    })
+    .on('mouseleave', hideTip)
+    .on('click', (ev, d) => { ev.stopPropagation(); selectNode(d); })
+    .on('dblclick', (ev, d) => { ev.stopPropagation(); if (d.nodeType === 'cg') toggleExpandCG(d.id); });
+
+  svgSel.on('click', () => { selectedId = null; syncSelection(); });
+
+  // ── Simulation
+  sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id)
+      .distance(d => d.rel === 'has_coverpoint' || d.rel === 'has_cross' ? 65 : 95)
+      .strength(0.45))
+    .force('charge', d3.forceManyBody().strength(d => {
+      if (d.nodeType === 'cg') return -450;
+      if (d.nodeType === 'task') return -130;
+      if (d.nodeType === 'var') return -35;
+      return -90;
+    }))
+    .force('center', d3.forceCenter(W / 2, H / 2).strength(0.08))
+    .force('collide', d3.forceCollide(d => (N[d.nodeType]?.r || 8) + 5))
+    .alphaDecay(0.025)
+    .on('tick', tick);
+
+  syncSelection();
+  applySearch();
+}
+
+function tick() {
+  if (!linkSel || !nodeSel) return;
+  linkSel
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => shortenX(d))
+    .attr('y2', d => shortenY(d));
+  nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+}
+function shortenX(d) {
+  const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  return d.target.x - dx / len * ((N[d.target.nodeType]?.r || 8) + 3);
+}
+function shortenY(d) {
+  const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  return d.target.y - dy / len * ((N[d.target.nodeType]?.r || 8) + 3);
+}
+
+// ── Expand / collapse CG ──────────────────────────────────────────────────────
+function toggleExpandCG(cgId) {
+  expandedCGs.has(cgId) ? expandedCGs.delete(cgId) : expandedCGs.add(cgId);
+  rebuildGraph();
+  // re-render detail if this CG is selected
+  if (selectedId === cgId) {
+    const n = baseNodes.find(n => n.id === cgId);
+    if (n) setTimeout(() => renderDetail(n), 30);
+  }
+}
+window._toggleExpand = toggleExpandCG; // for inline button
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+function selectNode(d) {
+  selectedId = d.id;
+  syncSelection();
+  renderDetail(d);
+}
+function syncSelection() {
+  if (nodeSel) nodeSel.classed('selected', d => d.id === selectedId);
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+document.getElementById('searchInput').addEventListener('input', e => {
+  searchQ = e.target.value.trim().toLowerCase();
+  applySearch();
+});
+function applySearch() {
+  if (!nodeSel) return;
+  if (!searchQ) {
+    nodeSel.classed('dimmed', false).classed('highlighted', false);
+    if (linkSel) linkSel.classed('dimmed', false);
+    return;
+  }
+  const hits = new Set();
+  nodeSel.each(d => { if (d.name.toLowerCase().includes(searchQ)) hits.add(d.id); });
+  nodeSel.classed('dimmed', d => !hits.has(d.id)).classed('highlighted', d => hits.has(d.id));
+  if (linkSel) linkSel.classed('dimmed', d => !hits.has(d.source.id) && !hits.has(d.target.id));
+}
+
+// ── Focus dropdown ────────────────────────────────────────────────────────────
+document.getElementById('focusSelect').addEventListener('change', e => {
+  focusCGId = e.target.value;
+  xfm = d3.zoomIdentity;
+  rebuildGraph();
+});
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tipEl = document.getElementById('tooltip');
+function showTip(ev, html) {
+  tipEl.innerHTML = html;
+  tipEl.classList.add('visible');
+  const r = document.querySelector('.graph-area').getBoundingClientRect();
+  let x = ev.clientX - r.left + 14, y = ev.clientY - r.top - 12;
+  if (x + 310 > r.width) x = ev.clientX - r.left - 324;
+  tipEl.style.left = x + 'px'; tipEl.style.top = y + 'px';
+}
+function hideTip() { tipEl.classList.remove('visible'); }
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function resetDetailPanel() {
+  document.getElementById('detailPanel').innerHTML =
+    '<div class="detail-empty">' +
+    '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">' +
+    '<circle cx="24" cy="10" r="5"/><circle cx="8" cy="38" r="5"/><circle cx="40" cy="38" r="5"/>' +
+    '<line x1="24" y1="15" x2="11" y2="34"/><line x1="24" y1="15" x2="37" y2="34"/>' +
+    '<line x1="13" y1="38" x2="35" y2="38"/></svg>' +
+    '<span>Select a node to view details</span></div>';
+}
+
+function renderDetail(d) {
+  const panel = document.getElementById('detailPanel');
+  const cfg = N[d.nodeType] || { color: '#64748b', label: d.nodeType };
+  let html =
+    `<div class="detail-header">` +
+    `<div class="detail-type-badge" style="background:${cfg.color}1a;color:${cfg.color};border:1px solid ${cfg.color}44">${cfg.label}</div>` +
+    `<div class="detail-name">${esc(d.name)}</div>` +
+    (d.data.semantic_summary ? `<div class="detail-summary">${esc(d.data.semantic_summary)}</div>` : '') +
+    `</div><div class="detail-body">`;
+
+  if      (d.nodeType === 'cg')         html += detailCG(d);
+  else if (d.nodeType === 'var')        html += detailVar(d);
+  else if (d.nodeType === 'task')       html += detailTask(d);
+  else if (d.nodeType === 'event')      html += detailEvent(d);
+  else if (d.nodeType === 'coverpoint') html += detailCP(d);
+  else if (d.nodeType === 'cross')      html += detailCross(d);
+
+  html += '</div>';
+  panel.innerHTML = html;
+
+  // Wire collapsibles
+  panel.querySelectorAll('.coll-header').forEach(h => {
+    const body = h.nextElementSibling;
+    const arrow = h.querySelector('.coll-arrow');
+    h.addEventListener('click', () => {
+      const open = body.classList.toggle('open');
+      arrow.classList.toggle('open', open);
+    });
+  });
+
+  // Tag navigation
+  panel.querySelectorAll('.tag[data-nid]').forEach(tag => {
+    tag.addEventListener('click', () => {
+      const n = baseNodes.find(n => n.id === tag.dataset.nid);
+      if (n) { selectNode(n); flashNode(n.id); }
+    });
+  });
+}
+
+function flashNode(nodeId) {
+  if (!nodeSel) return;
+  nodeSel.filter(d => d.id === nodeId).select('circle')
+    .transition().duration(0).attr('r', d => (N[d.nodeType]?.r || 8) * 2.2)
+    .transition().duration(350).attr('r', d => N[d.nodeType]?.r || 8);
+}
+
+// ─ CG detail ──────────────────────────────────────────────────────────────────
+function detailCG(d) {
+  const cg = d.data;
+  const expanded = expandedCGs.has(d.id);
+  let h = section('Covergroup',
+    field('Decl. line', cg.declaration_line || '—') +
+    field('Trigger', `<code style="font-size:11px">${esc(cg.sampling_trigger_expression || '—')}</code>`) +
+    `<div class="detail-field"><span class="detail-field-key">Children</span>` +
+    `<span class="detail-field-val">` +
+    `<button class="expand-btn" onclick="window._toggleExpand('${d.id}')" ` +
+    `style="background:${expanded?'#4c05194d':'#1e3a5f'};color:${expanded?'#fda4af':'#93c5fd'};border-color:${expanded?'#f43f5e':'#2563eb'}">` +
+    (expanded ? '▼ Collapse coverpoints / crosses' : '▶ Expand coverpoints / crosses') +
+    `</button></span></div>`
+  );
+
+  if ((cg.sampled_variables || []).length)
+    h += section('Sampled Variables',
+      tags(cg.sampled_variables, v => {
+        const vn = baseNodes.find(n => n.name === v && n.nodeType === 'var');
+        return `<span class="tag amber" ${vn ? `data-nid="${vn.id}"` : ''} title="${esc(v)}">${trunc(v, 28)}</span>`;
+      }));
+
+  if ((cg.trigger_variables || []).length)
+    h += section('Trigger Variables',
+      tags(cg.trigger_variables, v => {
+        const vn = baseNodes.find(n => n.name === v && n.nodeType === 'var');
+        return `<span class="tag cyan" ${vn ? `data-nid="${vn.id}"` : ''} title="${esc(v)}">${trunc(v, 28)}</span>`;
+      }));
+
+  if ((cg.coverpoints || []).length)
+    h += section(`Coverpoints (${cg.coverpoints.length})`,
+      tags(cg.coverpoints, cp =>
+        `<span class="tag cyan">${esc(cp.name)}</span>`));
+
+  if ((cg.crosses || []).length)
+    h += section(`Crosses (${cg.crosses.length})`,
+      tags(cg.crosses, cr =>
+        `<span class="tag rose">${esc(cr.name)}</span>`));
+
+  if (cg.documentation)
+    h += collapsible('Jama Documentation',
+      `<pre class="sv-src" style="font-size:10px">${esc(cg.documentation)}</pre>`);
+
+  if (cg.covergroup_sv_source)
+    h += collapsible('Covergroup SV Source',
+      `<pre class="sv-src">${esc(cg.covergroup_sv_source)}</pre>`);
+
+  if (cg.sample_task_sv_source)
+    h += collapsible('Sample Task SV Source',
+      `<pre class="sv-src">${esc(cg.sample_task_sv_source)}</pre>`);
+
+  return h;
+}
+
+// ─ Variable detail ─────────────────────────────────────────────────────────────
+function detailVar(d) {
+  const v = d.data;
+  let h = section('Variable',
+    field('Type',     `<code style="font-size:11px">${esc(v.type || '—')}</code>`) +
+    field('Group',    v.variable_group || '—') +
+    field('Register', `<code style="font-size:11px">${esc(v.register_trace || '—')}</code>`) +
+    field('Decl.',    v.declaration_line || '—') +
+    (v.comment ? field('Comment', esc(v.comment)) : ''));
+
+  if ((v.assigned_by_tasks || []).length)
+    h += section('Assigned By',
+      tags(v.assigned_by_tasks, tid => {
+        const tn = baseNodes.find(n => n.id === tid);
+        return `<span class="tag green" ${tn ? `data-nid="${tid}"` : ''}>${esc(tid.replace('task:',''))}</span>`;
+      }));
+
+  if (v.register_enum?.values) {
+    const entries = Object.entries(v.register_enum.values);
+    h += collapsible(`Register Enum (${entries.length})`,
+      entries.map(([k, val]) =>
+        `<div class="detail-field"><span class="detail-field-key" style="font-family:monospace;font-size:10px;min-width:auto;margin-right:8px;overflow:hidden;text-overflow:ellipsis">${esc(k)}</span>` +
+        `<span class="detail-field-val" style="color:#475569">${val}</span></div>`
+      ).join(''));
+  }
+  return h;
+}
+
+// ─ Task detail ─────────────────────────────────────────────────────────────────
+function detailTask(d) {
+  const t = d.data;
+  let h = section('Task',
+    field('Kind',  t.kind || '—') +
+    field('Decl.', t.declaration_line || '—'));
+  if ((t.updates_variables || []).length)
+    h += section(`Updates Variables (${t.updates_variables.length})`,
+      tags(t.updates_variables, vid => {
+        const vn = baseNodes.find(n => n.id === vid);
+        return `<span class="tag amber" ${vn ? `data-nid="${vid}"` : ''}>${esc(vid.replace('var:',''))}</span>`;
+      }));
+  return h;
+}
+
+// ─ Event detail ────────────────────────────────────────────────────────────────
+function detailEvent(d) {
+  const e = d.data;
+  return section('Event',
+    field('Decl.', e.declaration_line || '—') +
+    (e.comment ? field('Comment', esc(e.comment)) : ''));
+}
+
+// ─ Coverpoint / Cross detail (expanded children) ──────────────────────────────
+function detailCP(d) {
+  const cp = d.data;
+  let h = section('Coverpoint',
+    field('Expression', cp.expression
+      ? `<code style="font-size:11px">${esc(cp.expression)}</code>`
+      : '—'));
+  if ((cp.sampled_variables || []).length)
+    h += section('Sampled Variables',
+      tags(cp.sampled_variables, v => {
+        const vn = baseNodes.find(n => n.name === v && n.nodeType === 'var');
+        return `<span class="tag amber" ${vn ? `data-nid="${vn.id}"` : ''} title="${esc(v)}">${trunc(v, 28)}</span>`;
+      }));
+  return h;
+}
+
+function detailCross(d) {
+  const cr = d.data;
+  let h = section('Cross', '');
+  if ((cr.coverpoints || []).length)
+    h += section('Crosses These Coverpoints',
+      tags(cr.coverpoints, cp =>
+        `<span class="tag cyan">${esc(cp)}</span>`));
+  return h;
+}
+
+// ── HTML helpers ──────────────────────────────────────────────────────────────
+function section(title, body) {
+  return `<div class="detail-section"><div class="detail-section-title">${title}</div>${body}</div>`;
+}
+function field(key, val) {
+  return `<div class="detail-field"><span class="detail-field-key">${key}</span><span class="detail-field-val">${val}</span></div>`;
+}
+function tags(arr, fn) {
+  return `<div class="tags-wrap">${arr.map(fn).join('')}</div>`;
+}
+function collapsible(title, body) {
+  return `<div class="coll-header"><span class="coll-arrow">▶</span><span class="coll-title">${title}</span></div>` +
+    `<div class="coll-body">${body}</div>`;
+}
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function trunc(s, n) { s = String(s||''); return s.length > n ? s.slice(0,n)+'…' : s; }
+
+// ── CG-filter toggle ──────────────────────────────────────────────────────────
+function toggleCGFilter() {
+  filterCGOnly = !filterCGOnly;
+  document.getElementById('cgFilterBtn').classList.toggle('active', filterCGOnly);
+  rebuildGraph();
+}
+
+// ── Panel resize (drag left edge) ────────────────────────────────────────────
+(function () {
+  const resizer = document.getElementById('panelResizer');
+  const panel   = document.getElementById('detailPanel');
+  const main    = document.querySelector('.main');
+  let dragging = false, startX = 0, startW = 0;
+
+  resizer.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = panel.getBoundingClientRect().width;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startX - e.clientX;          // dragging left = wider
+    const newW = Math.max(250, Math.min(700, startW + delta));
+    panel.style.width    = newW + 'px';
+    panel.style.minWidth = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ── SVG resize observer ───────────────────────────────────────────────────────
+new ResizeObserver(() => {
+  if (!rawKG || !sim) return;
+  const W = document.getElementById('graphSvg').clientWidth  || 900;
+  const H = document.getElementById('graphSvg').clientHeight || 600;
+  sim.force('center', d3.forceCenter(W/2, H/2).strength(0.08));
+  sim.alpha(0.08).restart();
+}).observe(document.getElementById('graphSvg'));
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+(function() {
+  const KEY = 'ccs-theme';
+  const saved = localStorage.getItem(KEY);
+  if (saved === 'light') document.documentElement.classList.add('light');
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem(KEY, isLight ? 'light' : 'dark');
+  });
+})();
+</script>
+</body>
+</html>
