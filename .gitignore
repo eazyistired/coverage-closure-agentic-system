@@ -1,0 +1,55 @@
+# Secrets & environment config — never commit
+.env
+.env.*
+!.env.example
+permanent_token.py
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDEs
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Inputs — report files are large generated artefacts, not source
+inputs/*.report
+inputs/*.log
+!inputs/.gitkeep
+
+# Outputs — exclude generated JSON/logs but keep folder structure via .gitkeep
+outputs/**/*.json
+outputs/**/*.log
+!outputs/**/.gitkeep
+
+# Testbench — read-only reference, not part of this repository
+testbench/
+
+# Semantic Scholar SDK — external repo, not committed
+resources/semantic_scholar/
+
+# Assets — ignore generated/exported pictures and DrawIO backup files
+assets/pictures/
+assets/**/*.bkp
